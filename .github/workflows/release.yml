@@ -35,6 +35,10 @@ jobs:
         run: |
           zip="build/distributions/${TAG}.zip"
           mv build/distributions/claude-comment-tasks-*.zip "$zip"
-          gh release create "$TAG" "$zip" \
-            --title "$TAG" \
-            --generate-notes
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$zip" --clobber
+          else
+            gh release create "$TAG" "$zip" \
+              --title "$TAG" \
+              --generate-notes
+          fi

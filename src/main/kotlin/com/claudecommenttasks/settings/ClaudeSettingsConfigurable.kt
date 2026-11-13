@@ -60,6 +60,11 @@ class ClaudeSettingsConfigurable : BoundConfigurable("Claude Comment Tasks") {
                     .bindSelected(settings::highlightingEnabled)
                     .comment("Colors are configured in Settings | Editor | Color Scheme | Claude Comment Tasks.")
             }
+            row {
+                checkBox("Animate comments while Claude is working")
+                    .bindSelected(settings::workingAnimationEnabled)
+                    .comment("Blurs the comment and sweeps a light across it until the run finishes.")
+            }
         }
     }
 
