@@ -1,0 +1,68 @@
+<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin>
+    <id>com.claudecommenttasks</id>
+    <name>Claude Comment Tasks</name>
+    <vendor>Claude Comment Tasks</vendor>
+    <description><![CDATA[
+        <p>Write a task for Claude Code as a comment, for example <code>// @claude add a method that sums the numbers in a Set</code>
+        or <code># @claude remove duplicates from the list</code>, then press <b>⌘.</b> (macOS) / <b>Ctrl+.</b>, click the gutter icon,
+        or optionally just save the file. The plugin runs the Claude Code CLI (<code>claude</code>) on the file, Claude does the task and
+        removes the comment, and the editor shows the updated file.</p>
+        <ul>
+            <li>Works in every language and comment style (<code>//</code>, <code>#</code>, <code>--</code>, <code>;</code>, <code>/* */</code>, <code>/** */</code>, …) through the PSI, with a text fallback for plain text files.</li>
+            <li>Highlights <code>@claude</code> comments with a configurable color (Settings | Editor | Color Scheme | Claude Comment Tasks).</li>
+            <li>Cancellable background run with timeout, loop protection, result notifications and a "Claude Tasks" tool window with the full CLI output.</li>
+        </ul>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <resource-bundle>messages.ClaudeCommentTasksBundle</resource-bundle>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- language="" = every language -->
+        <annotator language="" implementationClass="com.claudecommenttasks.highlight.ClaudeTaskAnnotator"/>
+        <codeInsight.lineMarkerProvider language="" implementationClass="com.claudecommenttasks.highlight.ClaudeTaskLineMarkerProvider"/>
+
+        <colorSettingsPage implementation="com.claudecommenttasks.highlight.ClaudeTaskColorSettingsPage"/>
+        <additionalTextAttributes scheme="Default" file="colorSchemes/ClaudeCommentTasksDefault.xml"/>
+        <additionalTextAttributes scheme="Darcula" file="colorSchemes/ClaudeCommentTasksDarcula.xml"/>
+
+        <applicationConfigurable
+                parentId="tools"
+                instance="com.claudecommenttasks.settings.ClaudeSettingsConfigurable"
+                id="com.claudecommenttasks.settings"
+                displayName="Claude Comment Tasks"/>
+
+        <!-- Records whether a save was explicit (Save All / Ctrl+S) or autosave; never vetoes. -->
+        <fileDocumentSynchronizationVetoer implementation="com.claudecommenttasks.save.ClaudeSaveVetoer"/>
+
+        <notificationGroup id="Claude Comment Tasks" displayType="BALLOON" key="notification.group.claude.comment.tasks"/>
+        <notificationGroup id="Claude Comment Tasks Progress" displayType="STICKY_BALLOON" key="notification.group.claude.comment.tasks.progress"/>
+
+        <toolWindow id="Claude Tasks"
+                    anchor="bottom"
+                    icon="com.claudecommenttasks.ClaudeIcons.ToolWindow"
+                    factoryClass="com.claudecommenttasks.toolwindow.ClaudeTasksToolWindowFactory"
+                    canCloseContents="false"/>
+    </extensions>
+
+    <applicationListeners>
+        <listener class="com.claudecommenttasks.save.ClaudeSaveListener"
+                  topic="com.intellij.openapi.fileEditor.FileDocumentManagerListener"/>
+    </applicationListeners>
+
+    <actions>
+        <action id="ClaudeCommentTasks.RunInFile"
+                class="com.claudecommenttasks.actions.RunClaudeTasksAction"
+                text="Run @claude Tasks in File"
+                description="Run the Claude Code CLI on every @claude comment in the current file"
+                icon="com.claudecommenttasks.ClaudeIcons.Task">
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <keyboard-shortcut keymap="$default" first-keystroke="control PERIOD"/>
+            <keyboard-shortcut keymap="Mac OS X" first-keystroke="meta PERIOD" replace-all="true"/>
+            <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="meta PERIOD" replace-all="true"/>
+        </action>
+    </actions>
+</idea-plugin>

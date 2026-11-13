@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Default (light) color scheme values for the Claude Comment Tasks text attributes. -->
+<list>
+    <option name="CLAUDE_TASK_COMMENT">
+        <value>
+            <option name="FOREGROUND" value="c2410c"/>
+        </value>
+    </option>
+    <option name="CLAUDE_TASK_TAG">
+        <value>
+            <option name="FONT_TYPE" value="1"/>
+        </value>
+    </option>
+</list>
