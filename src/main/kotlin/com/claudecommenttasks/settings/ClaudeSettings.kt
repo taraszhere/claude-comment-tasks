@@ -19,6 +19,7 @@ class ClaudeSettings : SimplePersistentStateComponent<ClaudeSettings.State>(Stat
         var timeoutSeconds by property(DEFAULT_TIMEOUT_SECONDS)
         var extraPrompt by string()
         var highlightingEnabled by property(true)
+        var workingAnimationEnabled by property(true)
     }
 
     /** Absolute path to the `claude` executable; empty means "detect automatically". */
@@ -60,6 +61,13 @@ class ClaudeSettings : SimplePersistentStateComponent<ClaudeSettings.State>(Stat
         get() = state.highlightingEnabled
         set(value) {
             state.highlightingEnabled = value
+        }
+
+    /** Blur + light sweep on the comments Claude is working on. */
+    var workingAnimationEnabled: Boolean
+        get() = state.workingAnimationEnabled
+        set(value) {
+            state.workingAnimationEnabled = value
         }
 
     companion object {

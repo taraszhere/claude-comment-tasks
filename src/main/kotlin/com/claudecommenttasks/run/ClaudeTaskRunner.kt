@@ -1,11 +1,13 @@
 package com.claudecommenttasks.run
 
+import com.claudecommenttasks.highlight.ClaudeWorkingEffect
 import com.claudecommenttasks.parser.ClaudeTask
 import com.claudecommenttasks.parser.ClaudeTaskParser
 import com.claudecommenttasks.psi.ClaudeTaskFinder
 import com.claudecommenttasks.settings.ClaudeSettings
 import com.intellij.lang.Language
 import com.intellij.notification.Notification
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.runReadActionBlocking
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -14,6 +16,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiManager
@@ -77,6 +80,7 @@ class ClaudeTaskRunner {
 
         if (!inProgress.add(file.path)) return
         var started = false
+        var workingEffect: Disposable? = null
         try {
             // Save first: Claude works on the file on disk. (Our save listener ignores this save
             // because the file is already marked as in progress.)
@@ -96,11 +100,18 @@ class ClaudeTaskRunner {
                 allowedTools = settings.allowedToolsOrDefault,
                 timeoutSeconds = settings.timeoutSeconds.coerceAtLeast(1),
             )
+            if (document != null && settings.workingAnimationEnabled) {
+                val ranges = runReadActionBlocking { ClaudeWorkingEffect.commentRanges(psiFile, tasks) }
+                workingEffect = ClaudeWorkingEffect.start(project, document, ranges)
+            }
             val progressNotification = ClaudeNotifications.showInProgress(project, file.name)
-            ProgressManager.getInstance().run(ClaudeRunTask(request, progressNotification))
+            ProgressManager.getInstance().run(ClaudeRunTask(request, progressNotification, workingEffect))
             started = true
         } finally {
-            if (!started) inProgress.remove(file.path)
+            if (!started) {
+                inProgress.remove(file.path)
+                workingEffect?.let { Disposer.dispose(it) }
+            }
         }
     }
 
@@ -116,6 +127,7 @@ class ClaudeTaskRunner {
     private inner class ClaudeRunTask(
         private val request: RunRequest,
         private val progressNotification: Notification,
+        private val workingEffect: Disposable?,
     ) : Task.Backgroundable(request.project, "Claude is working on ${request.file.name}", true) {
 
         @Volatile
@@ -138,6 +150,7 @@ class ClaudeTaskRunner {
         override fun onFinished() {
             inProgress.remove(request.file.path)
             progressNotification.expire()
+            workingEffect?.let { Disposer.dispose(it) }
             if (request.project.isDisposed) return
             FileRefresher.refreshAndReload(request.file)
             RunReporter.report(request, outcome ?: RunOutcome.Failure("The run produced no result."))
