@@ -39,4 +39,17 @@ class ClaudeCliResultParserTest {
         assertNull(ClaudeCliResultParser.parse("plain text output"))
         assertNull(ClaudeCliResultParser.parse("{\"foo\": 1}"))
     }
+
+    @Test
+    fun `picks the result event from stream-json output and reads permission denials`() {
+        val stdout = """{"type":"system","subtype":"init","model":"m"}""" + "\n" +
+            """{"type":"assistant","message":{"content":[{"type":"text","text":"Hi"}]}}""" + "\n" +
+            """{"type":"result","subtype":"success","is_error":false,"result":"Hi","num_turns":2,""" +
+            """"permission_denials":[{"tool_name":"Bash","tool_input":{"command":"ls"}}]}""" + "\n"
+        val result = ClaudeCliResultParser.parse(stdout)
+        assertNotNull(result)
+        assertEquals("Hi", result!!.resultText)
+        assertEquals(2, result.numTurns)
+        assertEquals(listOf("Bash"), result.permissionDenials)
+    }
 }

@@ -20,6 +20,7 @@ class ClaudeSettings : SimplePersistentStateComponent<ClaudeSettings.State>(Stat
         var extraPrompt by string()
         var highlightingEnabled by property(true)
         var workingAnimationEnabled by property(true)
+        var showRunDetails by property(false)
     }
 
     /** Absolute path to the `claude` executable; empty means "detect automatically". */
@@ -70,8 +71,23 @@ class ClaudeSettings : SimplePersistentStateComponent<ClaudeSettings.State>(Stat
             state.workingAnimationEnabled = value
         }
 
+    /** Also print the working directory, command and full prompt of each run in the Claude Tasks window. */
+    var showRunDetails: Boolean
+        get() = state.showRunDetails
+        set(value) {
+            state.showRunDetails = value
+        }
+
     companion object {
-        const val DEFAULT_ALLOWED_TOOLS = "Read,Edit,Grep,Glob,Bash"
+        /**
+         * Default value for `--allowedTools`.
+         *
+         * Example with all Claude Code built-in tools:
+         * `"Read,Edit,Write,MultiEdit,NotebookEdit,Grep,Glob,LS,Bash,WebFetch,WebSearch,TodoWrite,Task"`
+         *
+         * Tools can also be scoped with rules, e.g. `"Bash(git diff:*)"` or `"Bash(npm run test:*)"`.
+         */
+        const val DEFAULT_ALLOWED_TOOLS = "Read,Edit,Grep,Glob,Bash,MultiEdit,LS,WebFetch,WebSearch,Task"
         const val DEFAULT_TIMEOUT_SECONDS = 300
 
         @JvmStatic
