@@ -71,7 +71,7 @@ class ClaudeSettings : SimplePersistentStateComponent<ClaudeSettings.State>(Stat
         }
 
     companion object {
-        const val DEFAULT_ALLOWED_TOOLS = "Read,Edit,Grep,Glob"
+        const val DEFAULT_ALLOWED_TOOLS = "Read,Edit,Grep,Glob,Bash"
         const val DEFAULT_TIMEOUT_SECONDS = 300
 
         @JvmStatic
