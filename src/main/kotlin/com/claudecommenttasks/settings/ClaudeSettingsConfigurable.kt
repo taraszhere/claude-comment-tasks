@@ -65,6 +65,11 @@ class ClaudeSettingsConfigurable : BoundConfigurable("Claude Comment Tasks") {
                     .bindSelected(settings::workingAnimationEnabled)
                     .comment("Blurs the comment and sweeps a light across it until the run finishes.")
             }
+            row {
+                checkBox("Show run details in the Claude Tasks window")
+                    .bindSelected(settings::showRunDetails)
+                    .comment("Working directory, command and full prompt of each run. They are always written to idea.log.")
+            }
         }
     }
 

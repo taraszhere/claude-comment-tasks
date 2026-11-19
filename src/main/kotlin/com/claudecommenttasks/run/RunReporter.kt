@@ -6,9 +6,13 @@ import java.util.Locale
 
 /** Turns a [RunOutcome] into a notification. */
 object RunReporter {
-
     private const val MAX_NOTIFICATION_TEXT = 600
 
+    /**
+     * Shows a notification for the [outcome] of a Claude run on [request]'s file.
+     * Each outcome gets its own severity and message, plus actions to open the
+     * tool window log and, where relevant, the plugin settings.
+     */
     @RequiresEdt
     fun report(request: RunRequest, outcome: RunOutcome) {
         val project = request.project
@@ -60,7 +64,10 @@ object RunReporter {
             result?.totalCostUsd?.let { append(", $").append(String.format(Locale.ROOT, "%.2f", it)) }
         }
         val text = result?.resultText?.trim().orEmpty()
-        return if (text.isEmpty()) stats else "${shorten(text)}<br><i>$stats</i>"
+        val denied = result?.permissionDenials?.distinct().orEmpty()
+        val deniedText = if (denied.isEmpty()) "" else
+            "<br>Not allowed: ${ClaudeNotifications.escape(denied.joinToString(", "))} (see Allowed tools in settings)"
+        return (if (text.isEmpty()) stats else "${shorten(text)}<br><i>$stats</i>") + deniedText
     }
 
     private fun shorten(text: String): String =

@@ -1,5 +1,6 @@
 package com.claudecommenttasks.run
 
+import com.claudecommenttasks.settings.ClaudeSettings
 import com.claudecommenttasks.toolwindow.ClaudeTasksConsole
 import com.intellij.execution.ExecutionException
 import com.intellij.execution.configurations.GeneralCommandLine
@@ -19,7 +20,8 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * Runs `claude -p "<prompt>" --allowedTools <tools> --output-format json` for one request.
+ * Runs `claude -p "<prompt>" --allowedTools <tools> --output-format stream-json --verbose` for one request
+ * and shows the events in the "Claude Tasks" console as readable text (see [ClaudeStreamFormatter]).
  * Runs on a background thread under a cancellable progress indicator; never touches PSI or documents.
  */
 object ClaudeCliRunner {
@@ -43,7 +45,12 @@ object ClaudeCliRunner {
         }
 
         val commandLine = GeneralCommandLine(binary)
-            .withParameters("-p", request.prompt, "--allowedTools", request.allowedTools, "--output-format", "json")
+            .withParameters(
+                "-p", request.prompt,
+                "--allowedTools", request.allowedTools,
+                // stream-json gives one event per line while Claude works; in print mode it requires --verbose.
+                "--output-format", "stream-json", "--verbose",
+            )
             .withWorkDirectory(request.workingDirectory)
             .withParentEnvironmentType(GeneralCommandLine.ParentEnvironmentType.CONSOLE)
             .withCharset(Charsets.UTF_8)
@@ -53,13 +60,7 @@ object ClaudeCliRunner {
         }
 
         val startedAt = System.currentTimeMillis()
-        console.printLine(
-            "=== [${now()}] Claude run: ${request.file.path} (${request.tasks.size} task(s)) ===",
-            ConsoleViewContentType.SYSTEM_OUTPUT,
-        )
-        console.printLine("Working directory: ${request.workingDirectory}", ConsoleViewContentType.SYSTEM_OUTPUT)
-        console.printLine("Command: ${describe(binary, request)}", ConsoleViewContentType.SYSTEM_OUTPUT)
-        console.printLine("Prompt:\n${request.prompt}\n", ConsoleViewContentType.SYSTEM_OUTPUT)
+        printHeader(console, binary, request)
         LOG.info("Running ${describe(binary, request)} in ${request.workingDirectory}\nPrompt:\n${request.prompt}")
 
         val handler = try {
@@ -72,12 +73,17 @@ object ClaudeCliRunner {
 
         val stdout = StringBuilder()
         val stderr = StringBuilder()
+        val formatter = ClaudeStreamFormatter(request.workingDirectory)
+        val pendingLine = StringBuilder()
         handler.addProcessListener(object : ProcessListener {
             override fun onTextAvailable(event: ProcessEvent, outputType: Key<*>) {
                 when (outputType) {
                     ProcessOutputTypes.STDOUT -> {
-                        synchronized(stdout) { stdout.append(event.text) }
-                        console.print(event.text, ConsoleViewContentType.NORMAL_OUTPUT)
+                        synchronized(stdout) {
+                            stdout.append(event.text)
+                            pendingLine.append(event.text)
+                            printCompleteLines(console, formatter, pendingLine)
+                        }
                     }
                     ProcessOutputTypes.STDERR -> {
                         synchronized(stderr) { stderr.append(event.text) }
@@ -127,7 +133,12 @@ object ClaudeCliRunner {
 
         val exitCode = handler.exitCode ?: -1
         val elapsedMs = System.currentTimeMillis() - startedAt
-        val out = synchronized(stdout) { stdout.toString() }
+        val out = synchronized(stdout) {
+            // The last line may lack a trailing newline.
+            if (pendingLine.isNotEmpty()) pendingLine.append('\n')
+            printCompleteLines(console, formatter, pendingLine)
+            stdout.toString()
+        }
         val err = synchronized(stderr) { stderr.toString() }
         val result = ClaudeCliResultParser.parse(out)
 
@@ -137,17 +148,17 @@ object ClaudeCliRunner {
             result?.totalCostUsd?.let { append(", cost $").append(String.format(Locale.ROOT, "%.4f", it)) }
             result?.subtype?.let { append(", ").append(it) }
         }
-        console.printLine("\n=== [${now()}] Finished: $summary ===\n", ConsoleViewContentType.SYSTEM_OUTPUT)
         LOG.info("claude finished for ${request.file.path}: $summary\n--- stdout ---\n$out\n--- stderr ---\n$err")
 
         val failed = exitCode != 0 || result?.isError == true
+        printFooter(console, failed, exitCode, elapsedMs, result)
         if (!failed) return RunOutcome.Success(result, elapsedMs)
 
         val message = sequenceOf(
             result?.resultText,
             result?.errors?.takeIf { it.isNotEmpty() }?.joinToString("\n"),
             err,
-            out,
+            formatter.plainLines.joinToString("\n"),
         ).map { it?.trim().orEmpty() }.firstOrNull { it.isNotEmpty() } ?: "claude exited with code $exitCode"
         return RunOutcome.Failure(message, summary)
     }
@@ -162,8 +173,68 @@ object ClaudeCliRunner {
         }
     }
 
+    private fun printHeader(console: ClaudeTasksConsole, binary: String, request: RunRequest) {
+        val header = ConsoleViewContentType.SYSTEM_OUTPUT
+        console.print("━━ ${now()}  ", header)
+        console.printFileLink(request.file.name, request.file.path, header)
+        console.printLine("  ·  ${request.tasks.size} task(s) ━━━━━━━━━━━━━━━━━━━━━━━━", header)
+        for (task in request.tasks) {
+            console.printLine("  ● Line ${task.line}: ${task.text}", ConsoleViewContentType.USER_INPUT)
+        }
+        if (ClaudeSettings.getInstance().showRunDetails) {
+            val meta = ConsoleViewContentType.LOG_DEBUG_OUTPUT
+            console.printLine("Working directory: ${request.workingDirectory}", meta)
+            console.printLine("Command: ${describe(binary, request)}", meta)
+            console.printLine("Prompt:\n${request.prompt.prependIndent("  ")}", meta)
+        }
+        console.printLine("")
+    }
+
+    private fun printFooter(
+        console: ClaudeTasksConsole,
+        failed: Boolean,
+        exitCode: Int,
+        elapsedMs: Long,
+        result: ClaudeCliResult?,
+    ) {
+        val stats = buildList {
+            add("${elapsedMs / 1000} s")
+            result?.numTurns?.let { add("$it turn(s)") }
+            result?.totalCostUsd?.let { add("$" + String.format(Locale.ROOT, "%.4f", it)) }
+        }.joinToString(" · ")
+        if (failed) {
+            val reason = result?.subtype?.takeIf { it != "success" } ?: "exit code $exitCode"
+            console.printLine("✗ Failed ($reason) after $stats\n", ConsoleViewContentType.ERROR_OUTPUT)
+        } else {
+            console.printLine("✓ Done in $stats\n", ConsoleViewContentType.USER_INPUT)
+        }
+    }
+
+    /** Formats and prints every complete line in [pending], leaving a trailing partial line in place. */
+    private fun printCompleteLines(console: ClaudeTasksConsole, formatter: ClaudeStreamFormatter, pending: StringBuilder) {
+        while (true) {
+            val end = pending.indexOf("\n")
+            if (end < 0) return
+            val line = pending.substring(0, end)
+            pending.delete(0, end + 1)
+            for (segment in formatter.format(line)) {
+                val type = styleOf(segment.style)
+                if (segment.filePath != null) console.printFileLink(segment.text, segment.filePath, type)
+                else console.print(segment.text, type)
+            }
+        }
+    }
+
+    private fun styleOf(style: OutputStyle): ConsoleViewContentType = when (style) {
+        OutputStyle.META -> ConsoleViewContentType.LOG_DEBUG_OUTPUT
+        OutputStyle.TOOL -> ConsoleViewContentType.SYSTEM_OUTPUT
+        OutputStyle.TEXT -> ConsoleViewContentType.NORMAL_OUTPUT
+        OutputStyle.ERROR -> ConsoleViewContentType.ERROR_OUTPUT
+        OutputStyle.WARNING -> ConsoleViewContentType.LOG_WARNING_OUTPUT
+    }
+
     private fun describe(binary: String, request: RunRequest): String =
-        "$binary -p \"<prompt>\" --allowedTools \"${request.allowedTools}\" --output-format json"
+        "$binary -p \"<prompt>\" --allowedTools \"${request.allowedTools}\" --output-format stream-json --verbose"
 
     private fun now(): String = LocalTime.now().format(TIME)
 }

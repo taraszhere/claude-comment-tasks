@@ -15,9 +15,14 @@ data class ClaudeCliResult(
     val durationMs: Long?,
     val numTurns: Int?,
     val errors: List<String>,
+    /** Names of the tools Claude was not allowed to use, one entry per denied call. */
+    val permissionDenials: List<String> = emptyList(),
 )
 
-/** Pure Kotlin parser for the CLI's JSON output. Tolerates warnings printed around the JSON object. */
+/**
+ * Pure Kotlin parser for the CLI's result object. Works for `--output-format json` (one object) and
+ * `stream-json` (one event per line, the result last), and tolerates warnings printed around it.
+ */
 object ClaudeCliResultParser {
 
     fun parse(stdout: String): ClaudeCliResult? {
@@ -31,6 +36,9 @@ object ClaudeCliResultParser {
             durationMs = json.longOrNull("duration_ms"),
             numTurns = json.intOrNull("num_turns"),
             errors = json.stringList("errors"),
+            permissionDenials = json.member("permission_denials")?.takeIf { it.isJsonArray }?.asJsonArray
+                ?.mapNotNull { it.takeIf { d -> d.isJsonObject }?.asJsonObject?.stringOrNull("tool_name") }
+                .orEmpty(),
         )
     }
 
@@ -46,7 +54,7 @@ object ClaudeCliResultParser {
         for (candidate in candidates) {
             if (candidate.isEmpty()) continue
             val element = parseOrNull(candidate) ?: continue
-            if (element.isJsonObject && element.asJsonObject.has("type")) return element.asJsonObject
+            if (element.isJsonObject && element.asJsonObject.stringOrNull("type") == "result") return element.asJsonObject
         }
         return null
     }
